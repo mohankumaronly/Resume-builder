@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Resume Builder API",
-    "description": "Authentication + Resume CRUD APIs for Resume Builder",
+    "description": "Authentication + Resume CRUD + Template APIs for Resume Builder",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -85,6 +85,39 @@
       ]
     },
     {
+      "name": "Template APIs",
+      "item": [
+        {
+          "name": "Get All Templates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/templates",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "templates"]
+            }
+          }
+        },
+        {
+          "name": "Get Template By ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/api/templates/modern-1",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "templates", "modern-1"]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "Resume APIs",
       "item": [
         {
@@ -150,7 +183,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"title\": \"Senior Software Engineer Resume\",\n    \"templateId\": \"modern-2\",\n    \"resumeDataJson\": \"{\\\"personalInfo\\\":{\\\"fullName\\\":\\\"Mohan Kumar\\\",\\\"email\\\":\\\"mohan@gmail.com\\\",\\\"phone\\\":\\\"9876543210\\\",\\\"location\\\":\\\"Bangalore\\\",\\\"linkedin\\\":\\\"linkedin.com/in/mohan\\\"},\\\"skills\\\":[\\\"Java\\\",\\\"Spring Boot\\\",\\\"React\\\",\\\"Docker\\\"],\\\"summary\\\":\\\"Senior Java and Spring Boot developer with 4 years experience.\\\"}\"\n}"
+              "raw": "{\n    \"title\": \"Senior Software Engineer Resume\",\n    \"templateId\": \"classic-1\",\n    \"resumeDataJson\": \"{\\\"personalInfo\\\":{\\\"fullName\\\":\\\"Mohan Kumar\\\",\\\"email\\\":\\\"mohan@gmail.com\\\",\\\"phone\\\":\\\"9876543210\\\",\\\"location\\\":\\\"Bangalore\\\",\\\"linkedin\\\":\\\"linkedin.com/in/mohan\\\"},\\\"skills\\\":[\\\"Java\\\",\\\"Spring Boot\\\",\\\"React\\\",\\\"Docker\\\"],\\\"summary\\\":\\\"Senior Java and Spring Boot developer with 4 years experience.\\\"}\"\n}"
             },
             "url": {
               "raw": "http://localhost:8080/api/resumes/1",
@@ -172,6 +205,29 @@
               "host": ["localhost"],
               "port": "8080",
               "path": ["api", "resumes", "1"]
+            }
+          }
+        },
+        {
+          "name": "Create Resume - Invalid Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Invalid Template Test\",\n    \"templateId\": \"fake-template\",\n    \"resumeDataJson\": \"{\\\"personalInfo\\\":{\\\"fullName\\\":\\\"Test User\\\"}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8080/api/resumes",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8080",
+              "path": ["api", "resumes"]
             }
           }
         }

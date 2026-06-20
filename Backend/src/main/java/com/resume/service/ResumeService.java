@@ -7,6 +7,7 @@ import com.resume.dto.response.ResumeSummaryResponse;
 import com.resume.entity.Resume;
 import com.resume.entity.User;
 import com.resume.exception.ResumeNotFoundException;
+import com.resume.exception.TemplateNotFoundException;
 import com.resume.exception.UserNotFoundException;
 import com.resume.repository.ResumeRepository;
 import com.resume.repository.UserRepository;
@@ -25,6 +26,7 @@ public class ResumeService {
 
     private final ResumeRepository resumeRepository;
     private final UserRepository userRepository;
+    private final TemplateService templateService;
 
     private User getCurrentLoggedInUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -36,6 +38,11 @@ public class ResumeService {
 
     @Transactional
     public ResumeResponse createResume(CreateResumeRequest request) {
+        // Validate template exists
+        if (!templateService.isValidTemplate(request.getTemplateId())) {
+            throw new TemplateNotFoundException("Template not found with id: " + request.getTemplateId());
+        }
+
         User currentUser = getCurrentLoggedInUser();
 
         Resume resume = new Resume();
@@ -69,6 +76,11 @@ public class ResumeService {
 
     @Transactional
     public ResumeResponse updateResume(Long resumeId, UpdateResumeRequest request) {
+        // Validate template exists
+        if (!templateService.isValidTemplate(request.getTemplateId())) {
+            throw new TemplateNotFoundException("Template not found with id: " + request.getTemplateId());
+        }
+
         User currentUser = getCurrentLoggedInUser();
 
         Resume resume = resumeRepository.findByIdAndUserId(resumeId, currentUser.getId())
