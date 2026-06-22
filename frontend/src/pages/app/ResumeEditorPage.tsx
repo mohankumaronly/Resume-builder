@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,9 +9,6 @@ import {
   Trash2,
   Sparkles,
   User,
-  Mail,
-  Phone,
-  MapPin,
   Code,
   Check,
   Eye,
@@ -19,6 +16,8 @@ import {
   FileText,
   Briefcase,
   GraduationCap,
+  Globe,
+  Code2,
 } from "lucide-react";
 import { resumeService } from "../../services/resume.service";
 import { templateService } from "../../services/template.service";
@@ -29,11 +28,21 @@ import TextArea from "../../components/common/TextArea";
 import Loader from "../../components/common/Loader";
 import Badge from "../../components/common/Badge";
 import Modal from "../../components/common/Modal";
+import ExperienceSection from "../../components/resume/ExperienceSection";
+import EducationSection from "../../components/resume/EducationSection";
+import ProjectsSection from "../../components/resume/ProjectsSection";
 import toast from "react-hot-toast";
-import type { ResumeData } from "../../types/resume";
+import type { ResumeData, ExperienceItem, EducationItem, ProjectItem } from "../../types/resume";
 import type { Template } from "../../types/template";
+import { normalizeResumeData, splitCommaString, joinArrayToString } from "../../utils/resume-normalizer";
 
-// LinkedIn SVG Icon
+
+const GithubIcon = () => (
+  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.15 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.62.24 2.85.12 3.15.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+  </svg>
+);
+
 const LinkedInIconSVG = () => (
   <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
     <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
@@ -48,10 +57,15 @@ const resumeEditorSchema = z.object({
   phone: z.string().min(1, "Phone number is required"),
   location: z.string().min(1, "Location is required"),
   linkedin: z.string().optional(),
+  github: z.string().optional(),
+  portfolio: z.string().optional(),
   summary: z.string().min(10, "Summary must be at least 10 characters"),
-  skills: z.string().min(1, "At least one skill is required"),
-  experience: z.string().optional(),
-  education: z.string().optional(),
+  skillLanguages: z.string().optional(),
+  skillFrontend: z.string().optional(),
+  skillBackend: z.string().optional(),
+  skillDatabases: z.string().optional(),
+  skillTools: z.string().optional(),
+  certifications: z.string().optional(),
 });
 
 type ResumeEditorFormData = z.infer<typeof resumeEditorSchema>;
@@ -66,12 +80,15 @@ const ResumeEditorPage: React.FC = () => {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("modern-1");
-  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
-  const [aiResult, setAiResult] = useState<ResumeData | null>(null);
-  const [showAiComparison, setShowAiComparison] = useState(false);
   const [lastSaved, setLastSaved] = useState<string>("");
   const [activeSection, setActiveSection] = useState<string>("personal");
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+
+  // State for repeatable sections
+  const [experienceItems, setExperienceItems] = useState<ExperienceItem[]>([]);
+  const [educationItems, setEducationItems] = useState<EducationItem[]>([]);
+  const [projectItems, setProjectItems] = useState<ProjectItem[]>([]);
+  const [certificationItems, setCertificationItems] = useState<string[]>([]);
 
   const {
     register,
@@ -84,8 +101,12 @@ const ResumeEditorPage: React.FC = () => {
   } = useForm<ResumeEditorFormData>({
     resolver: zodResolver(resumeEditorSchema),
     defaultValues: {
-      experience: "",
-      education: "",
+      skillLanguages: "",
+      skillFrontend: "",
+      skillBackend: "",
+      skillDatabases: "",
+      skillTools: "",
+      certifications: "",
     },
   });
 
@@ -98,14 +119,22 @@ const ResumeEditorPage: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
+      // Load templates
       const templatesData = await templateService.getAllTemplates();
       setTemplates(templatesData);
 
+      // Load resume
       const resume = await resumeService.getResumeById(parseInt(resumeId!));
-      const parsedData = JSON.parse(resume.resumeDataJson) as ResumeData;
-      setResumeData(parsedData);
-      setSelectedTemplate(resume.templateId);
+      const parsedRaw = JSON.parse(resume.resumeDataJson);
+      const parsedData = normalizeResumeData(parsedRaw);
 
+      setSelectedTemplate(resume.templateId);
+      setExperienceItems(parsedData.experience || []);
+      setEducationItems(parsedData.education || []);
+      setProjectItems(parsedData.projects || []);
+      setCertificationItems(parsedData.certifications || []);
+
+      // Populate form
       reset({
         title: resume.title,
         templateId: resume.templateId,
@@ -114,14 +143,15 @@ const ResumeEditorPage: React.FC = () => {
         phone: parsedData.personalInfo.phone || "",
         location: parsedData.personalInfo.location || "",
         linkedin: parsedData.personalInfo.linkedin || "",
+        github: parsedData.personalInfo.github || "",
+        portfolio: parsedData.personalInfo.portfolio || "",
         summary: parsedData.summary || "",
-        skills: parsedData.skills?.join(", ") || "",
-        experience: parsedData.experience?.map(e => 
-          `${e.company} | ${e.position} | ${e.startDate} - ${e.endDate || "Present"} | ${e.description}`
-        ).join("\n\n") || "",
-        education: parsedData.education?.map(e =>
-          `${e.institution} | ${e.degree} | ${e.field} | ${e.startDate} - ${e.endDate || "Present"}`
-        ).join("\n\n") || "",
+        skillLanguages: joinArrayToString(parsedData.skills.languages),
+        skillFrontend: joinArrayToString(parsedData.skills.frontend),
+        skillBackend: joinArrayToString(parsedData.skills.backend),
+        skillDatabases: joinArrayToString(parsedData.skills.databases),
+        skillTools: joinArrayToString(parsedData.skills.tools),
+        certifications: joinArrayToString(parsedData.certifications || []),
       });
 
       setLastSaved(new Date(resume.updatedAt).toLocaleString());
@@ -137,28 +167,6 @@ const ResumeEditorPage: React.FC = () => {
   const onSubmit = async (data: ResumeEditorFormData) => {
     setIsSaving(true);
     try {
-      const experienceEntries = data.experience ? data.experience.split("\n\n").filter(Boolean).map(entry => {
-        const parts = entry.split(" | ");
-        return {
-          company: parts[0] || "",
-          position: parts[1] || "",
-          startDate: parts[2]?.split(" - ")[0] || "",
-          endDate: parts[2]?.split(" - ")[1] || "",
-          description: parts[3] || "",
-        };
-      }) : [];
-
-      const educationEntries = data.education ? data.education.split("\n\n").filter(Boolean).map(entry => {
-        const parts = entry.split(" | ");
-        return {
-          institution: parts[0] || "",
-          degree: parts[1] || "",
-          field: parts[2] || "",
-          startDate: parts[3]?.split(" - ")[0] || "",
-          endDate: parts[3]?.split(" - ")[1] || "",
-        };
-      }) : [];
-
       const resumeDataToSave: ResumeData = {
         personalInfo: {
           fullName: data.fullName,
@@ -166,11 +174,21 @@ const ResumeEditorPage: React.FC = () => {
           phone: data.phone,
           location: data.location,
           linkedin: data.linkedin || "",
+          github: data.github || "",
+          portfolio: data.portfolio || "",
         },
-        skills: data.skills.split(",").map((s) => s.trim()).filter(Boolean),
         summary: data.summary,
-        experience: experienceEntries,
-        education: educationEntries,
+        skills: {
+          languages: splitCommaString(data.skillLanguages),
+          frontend: splitCommaString(data.skillFrontend),
+          backend: splitCommaString(data.skillBackend),
+          databases: splitCommaString(data.skillDatabases),
+          tools: splitCommaString(data.skillTools),
+        },
+        experience: experienceItems,
+        education: educationItems,
+        projects: projectItems,
+        certifications: splitCommaString(data.certifications),
       };
 
       const payload = {
@@ -220,9 +238,35 @@ const ResumeEditorPage: React.FC = () => {
         experienceLevel: experienceLevel as any,
       });
 
-      const improvedData = JSON.parse(result.improvedResumeDataJson) as ResumeData;
-      setAiResult(improvedData);
-      setShowAiComparison(true);
+      const improvedData = JSON.parse(result.improvedResumeDataJson);
+      const normalized = normalizeResumeData(improvedData);
+
+      // Update state with AI improvements
+      setExperienceItems(normalized.experience || []);
+      setEducationItems(normalized.education || []);
+      setProjectItems(normalized.projects || []);
+      setCertificationItems(normalized.certifications || []);
+
+      reset({
+        ...getValues(),
+        fullName: normalized.personalInfo.fullName || "",
+        email: normalized.personalInfo.email || "",
+        phone: normalized.personalInfo.phone || "",
+        location: normalized.personalInfo.location || "",
+        linkedin: normalized.personalInfo.linkedin || "",
+        github: normalized.personalInfo.github || "",
+        portfolio: normalized.personalInfo.portfolio || "",
+        summary: normalized.summary || "",
+        skillLanguages: joinArrayToString(normalized.skills.languages),
+        skillFrontend: joinArrayToString(normalized.skills.frontend),
+        skillBackend: joinArrayToString(normalized.skills.backend),
+        skillDatabases: joinArrayToString(normalized.skills.databases),
+        skillTools: joinArrayToString(normalized.skills.tools),
+        certifications: joinArrayToString(normalized.certifications || []),
+      });
+
+      toast.success("AI improvements applied! Click Save to persist.");
+      setIsAiModalOpen(false);
     } catch (error) {
       console.error("Error improving resume:", error);
       toast.error("Failed to improve resume. Please try again.");
@@ -231,34 +275,21 @@ const ResumeEditorPage: React.FC = () => {
     }
   };
 
-  const handleApplyAiChanges = () => {
-    if (!aiResult) return;
-
-    setResumeData(aiResult);
-    reset({
-      ...getValues(),
-      fullName: aiResult.personalInfo.fullName || "",
-      email: aiResult.personalInfo.email || "",
-      phone: aiResult.personalInfo.phone || "",
-      location: aiResult.personalInfo.location || "",
-      linkedin: aiResult.personalInfo.linkedin || "",
-      summary: aiResult.summary || "",
-      skills: aiResult.skills?.join(", ") || "",
-    });
-    setShowAiComparison(false);
-    setIsAiModalOpen(false);
-    setAiResult(null);
-    toast.success("AI changes applied! Click Save to persist.");
-  };
-
   const watchedTemplateId = watch("templateId");
   const watchedFullName = watch("fullName");
   const watchedEmail = watch("email");
   const watchedPhone = watch("phone");
   const watchedLocation = watch("location");
   const watchedLinkedin = watch("linkedin");
+  const watchedGithub = watch("github");
+  const watchedPortfolio = watch("portfolio");
   const watchedSummary = watch("summary");
-  const watchedSkills = watch("skills");
+  const watchedSkillLanguages = watch("skillLanguages");
+  const watchedSkillFrontend = watch("skillFrontend");
+  const watchedSkillBackend = watch("skillBackend");
+  const watchedSkillDatabases = watch("skillDatabases");
+  const watchedSkillTools = watch("skillTools");
+  const watchedCertifications = watch("certifications");
 
   const scrollToSection = (sectionId: string) => {
     setActiveSection(sectionId);
@@ -266,6 +297,16 @@ const ResumeEditorPage: React.FC = () => {
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  };
+
+  // Combine all skills for preview
+  const getAllSkills = (): string[] => {
+    const languages = splitCommaString(watchedSkillLanguages);
+    const frontend = splitCommaString(watchedSkillFrontend);
+    const backend = splitCommaString(watchedSkillBackend);
+    const databases = splitCommaString(watchedSkillDatabases);
+    const tools = splitCommaString(watchedSkillTools);
+    return [...languages, ...frontend, ...backend, ...databases, ...tools];
   };
 
   if (isLoading) {
@@ -343,7 +384,7 @@ const ResumeEditorPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content - Full Page Google Docs Style */}
+      {/* Main Content */}
       <div className="flex h-[calc(100vh-56px)]">
         {/* Left Sidebar - Document Outline */}
         <div className="hidden w-64 border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:block overflow-y-auto p-4">
@@ -398,6 +439,17 @@ const ResumeEditorPage: React.FC = () => {
               Experience
             </button>
             <button
+              onClick={() => scrollToSection("projects")}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                activeSection === "projects"
+                  ? "bg-primary-50 text-primary-700 dark:bg-primary-950/30 dark:text-primary-400"
+                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              }`}
+            >
+              <Code2 className="inline h-4 w-4 mr-2" />
+              Projects
+            </button>
+            <button
               onClick={() => scrollToSection("education")}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
                 activeSection === "education"
@@ -408,13 +460,23 @@ const ResumeEditorPage: React.FC = () => {
               <GraduationCap className="inline h-4 w-4 mr-2" />
               Education
             </button>
+            <button
+              onClick={() => scrollToSection("certifications")}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                activeSection === "certifications"
+                  ? "bg-primary-50 text-primary-700 dark:bg-primary-950/30 dark:text-primary-400"
+                  : "text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              }`}
+            >
+              <Check className="inline h-4 w-4 mr-2" />
+              Certifications
+            </button>
           </nav>
         </div>
 
         {/* Center - Document Editor */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <form onSubmit={handleSubmit(onSubmit)} className="mx-auto max-w-4xl space-y-6">
-            {/* Google Docs Style Document */}
             <div className="rounded-lg bg-white shadow-lg dark:bg-gray-900 p-8 sm:p-12">
               {/* Title Section */}
               <div className="mb-8 border-b border-gray-200 pb-4 dark:border-gray-700">
@@ -458,13 +520,27 @@ const ResumeEditorPage: React.FC = () => {
                     error={errors.location?.message}
                     {...register("location")}
                   />
+                  <Input
+                    label="LinkedIn"
+                    placeholder="linkedin.com/in/johndoe"
+                    icon={<LinkedInIconSVG />}
+                    error={errors.linkedin?.message}
+                    {...register("linkedin")}
+                  />
+                  <Input
+                    label="GitHub"
+                    placeholder="github.com/johndoe"
+                    icon={<GithubIcon/>}
+                    error={errors.github?.message}
+                    {...register("github")}
+                  />
                   <div className="sm:col-span-2">
                     <Input
-                      label="LinkedIn Profile (Optional)"
-                      placeholder="linkedin.com/in/johndoe"
-                      icon={<LinkedInIconSVG />}
-                      error={errors.linkedin?.message}
-                      {...register("linkedin")}
+                      label="Portfolio / Website"
+                      placeholder="johndoe.com"
+                      icon={<Globe className="h-4 w-4" />}
+                      error={errors.portfolio?.message}
+                      {...register("portfolio")}
                     />
                   </div>
                 </div>
@@ -476,7 +552,7 @@ const ResumeEditorPage: React.FC = () => {
                   <FileText className="h-5 w-5" /> Professional Summary
                 </h2>
                 <TextArea
-                  placeholder="Write a compelling professional summary that highlights your key skills, experience, and career goals..."
+                  placeholder="Write a compelling professional summary..."
                   rows={5}
                   error={errors.summary?.message}
                   {...register("summary")}
@@ -486,57 +562,77 @@ const ResumeEditorPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* Skills */}
+              {/* Skills - Grouped */}
               <div id="skills" className="mb-8 scroll-mt-16">
                 <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                   <Code className="h-5 w-5" /> Skills
                 </h2>
-                <Input
-                  placeholder="JavaScript, React, Node.js, Python"
-                  error={errors.skills?.message}
-                  {...register("skills")}
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {watch("skills")?.split(",").map((skill, index) => (
-                    skill.trim() && (
-                      <span key={index} className="inline-flex items-center gap-1 rounded-full bg-primary-100 px-3 py-1 text-sm font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
-                        {skill.trim()}
-                      </span>
-                    )
-                  ))}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Input
+                    label="Languages"
+                    placeholder="Java, Python, JavaScript"
+                    {...register("skillLanguages")}
+                  />
+                  <Input
+                    label="Frontend"
+                    placeholder="React, Vue, Angular"
+                    {...register("skillFrontend")}
+                  />
+                  <Input
+                    label="Backend"
+                    placeholder="Spring Boot, Node.js, Django"
+                    {...register("skillBackend")}
+                  />
+                  <Input
+                    label="Databases"
+                    placeholder="MySQL, PostgreSQL, MongoDB"
+                    {...register("skillDatabases")}
+                  />
+                  <div className="sm:col-span-2">
+                    <Input
+                      label="Tools & Others"
+                      placeholder="Docker, Git, Postman, AWS"
+                      {...register("skillTools")}
+                    />
+                  </div>
                 </div>
-                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-                  Enter skills separated by commas
-                </p>
               </div>
 
-              {/* Experience */}
+              {/* Experience Section */}
               <div id="experience" className="mb-8 scroll-mt-16">
-                <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                  <Briefcase className="h-5 w-5" /> Experience
-                </h2>
-                <TextArea
-                  placeholder="Company Name | Position | Start Date - End Date | Description&#10;&#10;Example:&#10;Google | Software Engineer | 2020 - 2023 | Built scalable web applications..."
-                  rows={6}
-                  {...register("experience")}
+                <ExperienceSection
+                  items={experienceItems}
+                  onChange={setExperienceItems}
                 />
-                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-                  Format: Company | Position | Start - End | Description (separate entries with blank line)
-                </p>
               </div>
 
-              {/* Education */}
+              {/* Projects Section */}
+              <div id="projects" className="mb-8 scroll-mt-16">
+                <ProjectsSection
+                  items={projectItems}
+                  onChange={setProjectItems}
+                />
+              </div>
+
+              {/* Education Section */}
               <div id="education" className="mb-8 scroll-mt-16">
+                <EducationSection
+                  items={educationItems}
+                  onChange={setEducationItems}
+                />
+              </div>
+
+              {/* Certifications */}
+              <div id="certifications" className="mb-8 scroll-mt-16">
                 <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                  <GraduationCap className="h-5 w-5" /> Education
+                  <Check className="h-5 w-5" /> Certifications
                 </h2>
-                <TextArea
-                  placeholder="Institution | Degree | Field | Start Date - End Date&#10;&#10;Example:&#10;MIT | B.S. | Computer Science | 2016 - 2020"
-                  rows={4}
-                  {...register("education")}
+                <Input
+                  placeholder="AWS Certified, Google Cloud Professional, Oracle Certified Java"
+                  {...register("certifications")}
                 />
                 <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
-                  Format: Institution | Degree | Field | Start - End (separate entries with blank line)
+                  Separate certifications with commas
                 </p>
               </div>
             </div>
@@ -568,6 +664,7 @@ const ResumeEditorPage: React.FC = () => {
             <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4">
               <div className="aspect-[3/4] w-full bg-white dark:bg-gray-800 rounded shadow-sm p-6">
                 <div className="h-full space-y-4">
+                  {/* Header */}
                   <div className="border-b border-gray-200 dark:border-gray-700 pb-4">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                       {watchedFullName || "Your Name"}
@@ -579,36 +676,65 @@ const ResumeEditorPage: React.FC = () => {
                       {watchedLinkedin && (
                         <p className="text-primary-600 dark:text-primary-400">{watchedLinkedin}</p>
                       )}
+                      {watchedGithub && (
+                        <p className="text-primary-600 dark:text-primary-400">{watchedGithub}</p>
+                      )}
+                      {watchedPortfolio && (
+                        <p className="text-primary-600 dark:text-primary-400">{watchedPortfolio}</p>
+                      )}
                     </div>
                   </div>
 
+                  {/* Summary */}
                   <div>
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                       Summary
                     </h4>
-                    <p className="mt-1 text-sm text-gray-700 dark:text-gray-300 line-clamp-4">
+                    <p className="mt-1 text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
                       {watchedSummary || "Your professional summary will appear here..."}
                     </p>
                   </div>
 
+                  {/* Skills */}
                   <div>
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                       Skills
                     </h4>
                     <div className="mt-1 flex flex-wrap gap-1.5">
-                      {watchedSkills?.split(",").map((skill, index) => (
-                        skill.trim() && (
-                          <span key={index} className="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
-                            {skill.trim()}
-                          </span>
-                        )
+                      {getAllSkills().map((skill, index) => (
+                        <span key={index} className="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
+                          {skill}
+                        </span>
                       ))}
-                      {(!watchedSkills || watchedSkills.trim() === "") && (
+                      {getAllSkills().length === 0 && (
                         <span className="text-xs text-gray-400">Your skills will appear here</span>
                       )}
                     </div>
                   </div>
 
+                  {/* Experience Preview */}
+                  {experienceItems.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                        Experience
+                      </h4>
+                      <div className="mt-1 space-y-1">
+                        {experienceItems.slice(0, 2).map((exp) => (
+                          <div key={exp.id} className="text-xs">
+                            <p className="font-medium text-gray-700 dark:text-gray-300">
+                              {exp.position} at {exp.company}
+                            </p>
+                            <p className="text-gray-500 dark:text-gray-400">{exp.startDate} - {exp.current ? "Present" : exp.endDate}</p>
+                          </div>
+                        ))}
+                        {experienceItems.length > 2 && (
+                          <p className="text-xs text-gray-400">+{experienceItems.length - 2} more</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Footer */}
                   <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-auto">
                     <p className="text-center text-[10px] text-gray-400 dark:text-gray-500">
                       {templates.find(t => t.id === watchedTemplateId)?.name || "Modern"} • ATS-Friendly
@@ -624,122 +750,64 @@ const ResumeEditorPage: React.FC = () => {
       {/* AI Improve Modal */}
       <Modal
         isOpen={isAiModalOpen}
-        onClose={() => {
-          setIsAiModalOpen(false);
-          setShowAiComparison(false);
-          setAiResult(null);
-        }}
+        onClose={() => setIsAiModalOpen(false)}
         title="✨ AI Resume Enhancement"
         size="lg"
       >
-        {!showAiComparison ? (
-          <div className="space-y-6">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Enter your target role and experience level to get AI-powered suggestions
-              to improve your resume content.
-            </p>
+        <div className="space-y-6">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Enter your target role and experience level to get AI-powered suggestions
+            to improve your resume content.
+          </p>
 
-            <div className="space-y-4">
-              <Input
-                label="Target Role"
-                placeholder="e.g., Java Backend Developer"
-                id="targetRole"
-                defaultValue=""
-              />
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Experience Level
-                </label>
-                <select
-                  id="experienceLevel"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-                  defaultValue="fresher"
-                >
-                  <option value="fresher">Fresher</option>
-                  <option value="mid-level">Mid-Level</option>
-                  <option value="senior">Senior</option>
-                  <option value="lead">Lead</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="ghost"
-                onClick={() => setIsAiModalOpen(false)}
+          <div className="space-y-4">
+            <Input
+              label="Target Role"
+              placeholder="e.g., Java Backend Developer"
+              id="targetRole"
+              defaultValue=""
+            />
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Experience Level
+              </label>
+              <select
+                id="experienceLevel"
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                defaultValue="fresher"
               >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  const targetRole = (document.getElementById("targetRole") as HTMLInputElement)?.value;
-                  const experienceLevel = (document.getElementById("experienceLevel") as HTMLSelectElement)?.value;
-                  if (targetRole && experienceLevel) {
-                    handleAiSubmit(targetRole, experienceLevel);
-                  } else {
-                    toast.error("Please enter your target role.");
-                  }
-                }}
-                loading={isAiLoading}
-                icon={<Sparkles className="h-4 w-4" />}
-              >
-                Generate Improvements
-              </Button>
+                <option value="fresher">Fresher</option>
+                <option value="mid-level">Mid-Level</option>
+                <option value="senior">Senior</option>
+                <option value="lead">Lead</option>
+              </select>
             </div>
           </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                <h4 className="mb-3 font-medium text-gray-700 dark:text-gray-300">📄 Original</h4>
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Summary</p>
-                    <p className="text-gray-700 dark:text-gray-300">{resumeData?.summary}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Skills</p>
-                    <p className="text-gray-700 dark:text-gray-300">{resumeData?.skills?.join(", ")}</p>
-                  </div>
-                </div>
-              </div>
 
-              <div className="rounded-lg border border-primary-200 bg-primary-50 p-4 dark:border-primary-800 dark:bg-primary-950/20">
-                <h4 className="mb-3 font-medium text-primary-700 dark:text-primary-300 flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" /> Improved
-                </h4>
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="text-xs font-medium text-primary-600 dark:text-primary-400">Summary</p>
-                    <p className="text-gray-700 dark:text-gray-300">{aiResult?.summary}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-primary-600 dark:text-primary-400">Skills</p>
-                    <p className="text-gray-700 dark:text-gray-300">{aiResult?.skills?.join(", ")}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setShowAiComparison(false);
-                  setAiResult(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleApplyAiChanges}
-                icon={<Check className="h-4 w-4" />}
-              >
-                Apply Changes
-              </Button>
-            </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => setIsAiModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const targetRole = (document.getElementById("targetRole") as HTMLInputElement)?.value;
+                const experienceLevel = (document.getElementById("experienceLevel") as HTMLSelectElement)?.value;
+                if (targetRole && experienceLevel) {
+                  handleAiSubmit(targetRole, experienceLevel);
+                } else {
+                  toast.error("Please enter your target role.");
+                }
+              }}
+              loading={isAiLoading}
+              icon={<Sparkles className="h-4 w-4" />}
+            >
+              Generate Improvements
+            </Button>
           </div>
-        )}
+        </div>
       </Modal>
     </div>
   );

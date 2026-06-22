@@ -3,11 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Save, User, Mail, Phone, MapPin, Code, Sparkles, Link2} from "lucide-react";
+import { ArrowLeft, Save, User, Mail, Phone, MapPin, Link2 } from "lucide-react";
 import { resumeService } from "../../services/resume.service";
 import { templateService } from "../../services/template.service";
-// import { Template } from "../../types/template";
-// import { ResumeData } from "../../types/resume";
 import Button from "../../components/common/Button";
 import Input from "../../components/common/Input";
 import TextArea from "../../components/common/TextArea";
@@ -17,6 +15,7 @@ import Badge from "../../components/common/Badge";
 import toast from "react-hot-toast";
 import type { ResumeData } from "../../types/resume";
 import type { Template } from "../../types/template";
+import { splitCommaString } from "../../utils/resume-normalizer";
 
 const createResumeSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -27,7 +26,12 @@ const createResumeSchema = z.object({
   location: z.string().min(1, "Location is required"),
   linkedin: z.string().optional(),
   summary: z.string().min(10, "Summary must be at least 10 characters"),
-  skills: z.string().min(1, "At least one skill is required"),
+  // Skills now as comma-separated strings for grouped skills
+  skillLanguages: z.string().optional(),
+  skillFrontend: z.string().optional(),
+  skillBackend: z.string().optional(),
+  skillDatabases: z.string().optional(),
+  skillTools: z.string().optional(),
 });
 
 type CreateResumeFormData = z.infer<typeof createResumeSchema>;
@@ -92,8 +96,18 @@ const CreateResumePage: React.FC = () => {
           location: data.location,
           linkedin: data.linkedin || "",
         },
-        skills: data.skills.split(",").map((s) => s.trim()).filter(Boolean),
         summary: data.summary,
+        skills: {
+          languages: splitCommaString(data.skillLanguages),
+          frontend: splitCommaString(data.skillFrontend),
+          backend: splitCommaString(data.skillBackend),
+          databases: splitCommaString(data.skillDatabases),
+          tools: splitCommaString(data.skillTools),
+        },
+        experience: [],
+        projects: [],
+        education: [],
+        certifications: [],
       };
 
       const payload = {
@@ -105,7 +119,6 @@ const CreateResumePage: React.FC = () => {
       const result = await resumeService.createResume(payload);
       toast.success("Resume created successfully! 🎉");
       
-      // Navigate to editor page with the new resume ID
       navigate(`/resumes/${result.id}/edit`);
     } catch (error) {
       console.error("Error creating resume:", error);
@@ -116,6 +129,16 @@ const CreateResumePage: React.FC = () => {
   };
 
   const watchedTemplateId = watch("templateId");
+  
+  // Combine all skills for preview
+  const getAllSkills = (): string[] => {
+    const languages = splitCommaString(watch("skillLanguages"));
+    const frontend = splitCommaString(watch("skillFrontend"));
+    const backend = splitCommaString(watch("skillBackend"));
+    const databases = splitCommaString(watch("skillDatabases"));
+    const tools = splitCommaString(watch("skillTools"));
+    return [...languages, ...frontend, ...backend, ...databases, ...tools];
+  };
 
   if (isLoading) {
     return (
@@ -273,19 +296,40 @@ const CreateResumePage: React.FC = () => {
               />
             </Card>
 
-            {/* Card 5: Skills */}
+            {/* Card 5: Skills - Grouped */}
             <Card>
               <h3 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
                 Skills
               </h3>
-              <Input
-                placeholder="e.g., JavaScript, React, Node.js, Python"
-                icon={<Code className="h-4 w-4" />}
-                error={errors.skills?.message}
-                {...register("skills")}
-              />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Enter your skills separated by commas (e.g., JavaScript, React, Node.js)
+              <div className="space-y-4">
+                <Input
+                  label="Languages"
+                  placeholder="Java, Python, JavaScript"
+                  {...register("skillLanguages")}
+                />
+                <Input
+                  label="Frontend"
+                  placeholder="React, Vue, Angular"
+                  {...register("skillFrontend")}
+                />
+                <Input
+                  label="Backend"
+                  placeholder="Spring Boot, Node.js, Django"
+                  {...register("skillBackend")}
+                />
+                <Input
+                  label="Databases"
+                  placeholder="MySQL, PostgreSQL, MongoDB"
+                  {...register("skillDatabases")}
+                />
+                <Input
+                  label="Tools & Others"
+                  placeholder="Docker, Git, Postman, AWS"
+                  {...register("skillTools")}
+                />
+              </div>
+              <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                Enter skills separated by commas for each category
               </p>
             </Card>
           </form>
@@ -321,14 +365,14 @@ const CreateResumePage: React.FC = () => {
                 <div>
                   <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">Skills</p>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {watch("skills")?.split(",").map((skill, index) => (
+                    {getAllSkills().map((skill, index) => (
                       skill.trim() && (
                         <span key={index} className="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">
                           {skill.trim()}
                         </span>
                       )
                     ))}
-                    {!watch("skills") && (
+                    {getAllSkills().length === 0 && (
                       <span className="text-xs text-gray-400">Your skills will appear here</span>
                     )}
                   </div>
